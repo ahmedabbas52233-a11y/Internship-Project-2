@@ -1,353 +1,421 @@
-/**
- * DecodeLabs Project 2 — Backend API Development
- * The Nervous System: RESTful API with validation & error handling
- * 
- * Martina Plantijn: "Project 1 was the skin. Project 2 is the life."
- */
-
 const express = require('express');
-const cors = require('cors');
 const helmet = require('helmet');
+const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// ============================================
-// MIDDLEWARE STACK (Autonomic Defense)
-// ============================================
-
-// Security headers
+// ─── Security & Middleware ──────────────────────────────────────────────────
 app.use(helmet());
+app.use(cors());
+app.use(express.json());
 
-// CORS — allow frontend origin
-app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5500',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-// Body parsing
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true }));
-
-// Rate limiting (Circuit Breaker)
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
-    message: {
-        status: 429,
-        error: 'Too Many Requests',
-        message: 'Rate limit exceeded. Please try again later.'
-    }
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: { success: false, error: { code: 'RATE_LIMIT', message: 'Too many requests' } }
 });
 app.use('/api/', limiter);
 
-// ============================================
-// IN-MEMORY DATABASE (Temporary — until Project 3)
-// ============================================
-
+// ─── In-Memory Storage ──────────────────────────────────────────────────────
 let users = [
-    { id: 1, name: 'Ahmed Abbas', email: 'ahmed@decodelabs.in', role: 'intern' },
-    { id: 2, name: 'Martina Plantijn', email: 'martina@decodelabs.in', role: 'mentor' }
+  { id: 1, name: 'Alice Johnson', email: 'alice@example.com' },
+  { id: 2, name: 'Bob Smith', email: 'bob@example.com' }
 ];
 
 let posts = [
-    { id: 1, title: 'Semantic HTML5', content: 'The infrastructure of the web...', authorId: 2 },
-    { id: 2, title: 'CSS Grid Mastery', content: '2D floor-plan for layouts...', authorId: 2 }
+  { id: 1, title: 'Hello World', content: 'First post content', authorId: 1 },
+  { id: 2, title: 'API Design', content: 'RESTful principles', authorId: 2 }
 ];
 
-// ============================================
-// VALIDATION HELPERS (The Gatekeeper Rule)
-// ============================================
+let contacts = [];
+let nextUserId = 3;
+let nextPostId = 3;
+let nextContactId = 1;
 
-const validateEmail = (email) => {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(email);
+// ─── Validation Utilities ─────────────────────────────────────────────────────
+const isValidEmail = (email) => {
+  if (!email || typeof email !== 'string') return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 };
 
-const validateRequired = (obj, fields) => {
-    const missing = fields.filter(field => !obj[field] || obj[field].toString().trim() === '');
-    return missing.length === 0 ? null : missing;
+const isValidId = (id) => {
+  const num = Number(id);
+  return Number.isInteger(num) && num > 0;
 };
 
-// ============================================
-// ROUTES — USER ENDPOINTS
-// ============================================
-
-/**
- * GET /api/users
- * Retrieve all users (safe, idempotent)
- */
-app.get('/api/users', (req, res) => {
-    res.status(200).json({
-        status: 'success',
-        count: users.length,
-        data: users
-    });
-});
-
-/**
- * GET /api/users/:id
- * Retrieve single user by ID
- */
-app.get('/api/users/:id', (req, res) => {
-    const id = parseInt(req.params.id);
-
-    if (isNaN(id)) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'Bad Request',
-            message: 'User ID must be a valid number'
-        });
-    }
-
-    const user = users.find(u => u.id === id);
-
-    if (!user) {
-        return res.status(404).json({
-            status: 'error',
-            error: 'Not Found',
-            message: `User with ID ${id} not found`
-        });
-    }
-
-    res.status(200).json({
-        status: 'success',
-        data: user
-    });
-});
-
-/**
- * POST /api/users
- * Create a new user (unsafe, non-idempotent)
- */
-app.post('/api/users', (req, res) => {
-    const { name, email, role } = req.body;
-
-    // Validation: Never trust the client
-    const missing = validateRequired(req.body, ['name', 'email']);
-    if (missing) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'Bad Request',
-            message: `Missing required fields: ${missing.join(', ')}`
-        });
-    }
-
-    if (!validateEmail(email)) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'Bad Request',
-            message: 'Invalid email format'
-        });
-    }
-
-    // Check for duplicate email
-    if (users.some(u => u.email === email)) {
-        return res.status(409).json({
-            status: 'error',
-            error: 'Conflict',
-            message: 'Email already registered'
-        });
-    }
-
-    const newUser = {
-        id: users.length + 1,
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        role: role || 'intern',
-        createdAt: new Date().toISOString()
-    };
-
-    users.push(newUser);
-
-    res.status(201).json({
-        status: 'success',
-        message: 'User created successfully',
-        data: newUser
-    });
-});
-
-// ============================================
-// ROUTES — POST ENDPOINTS
-// ============================================
-
-/**
- * GET /api/posts
- * Retrieve all posts
- */
-app.get('/api/posts', (req, res) => {
-    const postsWithAuthors = posts.map(post => ({
-        ...post,
-        author: users.find(u => u.id === post.authorId)?.name || 'Unknown'
-    }));
-
-    res.status(200).json({
-        status: 'success',
-        count: posts.length,
-        data: postsWithAuthors
-    });
-});
-
-/**
- * POST /api/posts
- * Create a new post
- */
-app.post('/api/posts', (req, res) => {
-    const { title, content, authorId } = req.body;
-
-    const missing = validateRequired(req.body, ['title', 'content', 'authorId']);
-    if (missing) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'Bad Request',
-            message: `Missing required fields: ${missing.join(', ')}`
-        });
-    }
-
-    const author = users.find(u => u.id === parseInt(authorId));
-    if (!author) {
-        return res.status(404).json({
-            status: 'error',
-            error: 'Not Found',
-            message: 'Author not found'
-        });
-    }
-
-    const newPost = {
-        id: posts.length + 1,
-        title: title.trim(),
-        content: content.trim(),
-        authorId: parseInt(authorId),
-        createdAt: new Date().toISOString()
-    };
-
-    posts.push(newPost);
-
-    res.status(201).json({
-        status: 'success',
-        message: 'Post created successfully',
-        data: newPost
-    });
-});
-
-// ============================================
-// ROUTES — CONTACT FORM (Connects to Project 1)
-// ============================================
-
-/**
- * POST /api/contact
- * Handle contact form submissions from Project 1 frontend
- */
-app.post('/api/contact', (req, res) => {
-    const { name, email, subject, message } = req.body;
-
-    const missing = validateRequired(req.body, ['name', 'email', 'subject', 'message']);
-    if (missing) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'Bad Request',
-            message: `Missing required fields: ${missing.join(', ')}`
-        });
-    }
-
-    if (!validateEmail(email)) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'Bad Request',
-            message: 'Invalid email format'
-        });
-    }
-
-    if (message.length < 10) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'Bad Request',
-            message: 'Message must be at least 10 characters'
-        });
-    }
-
-    // In production, this would send an email or store in DB
-    const submission = {
-        id: Date.now(),
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        subject,
-        message: message.trim(),
-        receivedAt: new Date().toISOString()
-    };
-
-    res.status(201).json({
-        status: 'success',
-        message: 'Message received successfully',
-        data: submission
-    });
-});
-
-// ============================================
-// HEALTH CHECK
-// ============================================
-
+// ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-    res.status(200).json({
-        status: 'success',
-        message: 'System pulse: stable',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-    });
+  res.status(200).json({ success: true, status: 'UP', timestamp: new Date().toISOString() });
 });
 
-// ============================================
-// ERROR HANDLING (Error Resilience)
-// ============================================
+// ═══════════════════════════════════════════════════════════════════════════════
+// USERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// List all users (with optional pagination)
+app.get('/api/users', (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  const paginatedUsers = users.slice(startIndex, endIndex);
+
+  res.status(200).json({
+    success: true,
+    data: paginatedUsers,
+    pagination: {
+      page,
+      limit,
+      total: users.length,
+      totalPages: Math.ceil(users.length / limit)
+    }
+  });
+});
+
+// Get single user
+app.get('/api/users/:id', (req, res) => {
+  if (!isValidId(req.params.id)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Invalid user ID format', field: 'id' }
+    });
+  }
+  const user = users.find(u => u.id === parseInt(req.params.id, 10));
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+  res.status(200).json({ success: true, data: user });
+});
+
+// Create user
+app.post('/api/users', (req, res) => {
+  const { name, email } = req.body;
+  const errors = [];
+
+  if (!name || typeof name !== 'string' || name.trim().length < 2) {
+    errors.push({ field: 'name', message: 'Name is required and must be at least 2 characters' });
+  }
+  if (!isValidEmail(email)) {
+    errors.push({ field: 'email', message: 'Valid email is required' });
+  }
+  if (errors.length > 0) {
+    return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', errors } });
+  }
+
+  const trimmedEmail = email.trim().toLowerCase();
+  if (users.some(u => u.email.toLowerCase() === trimmedEmail)) {
+    return res.status(409).json({
+      success: false,
+      error: { code: 'CONFLICT', message: 'Email already exists' }
+    });
+  }
+
+  const newUser = {
+    id: nextUserId++,
+    name: name.trim(),
+    email: trimmedEmail
+  };
+  users.push(newUser);
+  res.status(201).json({ success: true, data: newUser });
+});
+
+// Update user
+app.put('/api/users/:id', (req, res) => {
+  if (!isValidId(req.params.id)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Invalid user ID format', field: 'id' }
+    });
+  }
+
+  const user = users.find(u => u.id === parseInt(req.params.id, 10));
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+
+  const { name, email } = req.body;
+  const errors = [];
+
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.trim().length < 2) {
+      errors.push({ field: 'name', message: 'Name must be at least 2 characters' });
+    } else {
+      user.name = name.trim();
+    }
+  }
+
+  if (email !== undefined) {
+    if (!isValidEmail(email)) {
+      errors.push({ field: 'email', message: 'Valid email is required' });
+    } else {
+      const trimmedEmail = email.trim().toLowerCase();
+      if (users.some(u => u.id !== user.id && u.email.toLowerCase() === trimmedEmail)) {
+        return res.status(409).json({
+          success: false,
+          error: { code: 'CONFLICT', message: 'Email already exists' }
+        });
+      }
+      user.email = trimmedEmail;
+    }
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', errors } });
+  }
+
+  res.status(200).json({ success: true, data: user });
+});
+
+// Delete user
+app.delete('/api/users/:id', (req, res) => {
+  if (!isValidId(req.params.id)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Invalid user ID format', field: 'id' }
+    });
+  }
+
+  const index = users.findIndex(u => u.id === parseInt(req.params.id, 10));
+  if (index === -1) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+
+  const deleted = users.splice(index, 1)[0];
+  res.status(200).json({ success: true, data: deleted, message: 'User deleted successfully' });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// POSTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// List all posts (with optional pagination)
+app.get('/api/posts', (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  const paginatedPosts = posts.slice(startIndex, endIndex);
+
+  res.status(200).json({
+    success: true,
+    data: paginatedPosts,
+    pagination: {
+      page,
+      limit,
+      total: posts.length,
+      totalPages: Math.ceil(posts.length / limit)
+    }
+  });
+});
+
+// Get single post
+app.get('/api/posts/:id', (req, res) => {
+  if (!isValidId(req.params.id)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Invalid post ID format', field: 'id' }
+    });
+  }
+  const post = posts.find(p => p.id === parseInt(req.params.id, 10));
+  if (!post) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Post not found' }
+    });
+  }
+  res.status(200).json({ success: true, data: post });
+});
+
+// Create post
+app.post('/api/posts', (req, res) => {
+  const { title, content, authorId } = req.body;
+  const errors = [];
+
+  if (!title || typeof title !== 'string' || title.trim().length < 3) {
+    errors.push({ field: 'title', message: 'Title is required and must be at least 3 characters' });
+  }
+  if (!content || typeof content !== 'string' || content.trim().length < 1) {
+    errors.push({ field: 'content', message: 'Content is required' });
+  }
+  if (!isValidId(authorId)) {
+    errors.push({ field: 'authorId', message: 'Valid authorId is required' });
+  } else if (!users.some(u => u.id === parseInt(authorId, 10))) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Author user not found' }
+    });
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', errors } });
+  }
+
+  const newPost = {
+    id: nextPostId++,
+    title: title.trim(),
+    content: content.trim(),
+    authorId: parseInt(authorId, 10),
+    createdAt: new Date().toISOString()
+  };
+  posts.push(newPost);
+  res.status(201).json({ success: true, data: newPost });
+});
+
+// Update post
+app.put('/api/posts/:id', (req, res) => {
+  if (!isValidId(req.params.id)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Invalid post ID format', field: 'id' }
+    });
+  }
+
+  const post = posts.find(p => p.id === parseInt(req.params.id, 10));
+  if (!post) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Post not found' }
+    });
+  }
+
+  const { title, content, authorId } = req.body;
+  const errors = [];
+
+  if (title !== undefined) {
+    if (typeof title !== 'string' || title.trim().length < 3) {
+      errors.push({ field: 'title', message: 'Title must be at least 3 characters' });
+    } else {
+      post.title = title.trim();
+    }
+  }
+
+  if (content !== undefined) {
+    if (typeof content !== 'string' || content.trim().length < 1) {
+      errors.push({ field: 'content', message: 'Content cannot be empty' });
+    } else {
+      post.content = content.trim();
+    }
+  }
+
+  if (authorId !== undefined) {
+    if (!isValidId(authorId)) {
+      errors.push({ field: 'authorId', message: 'Valid authorId is required' });
+    } else if (!users.some(u => u.id === parseInt(authorId, 10))) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Author user not found' }
+      });
+    } else {
+      post.authorId = parseInt(authorId, 10);
+    }
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', errors } });
+  }
+
+  post.updatedAt = new Date().toISOString();
+  res.status(200).json({ success: true, data: post });
+});
+
+// Delete post
+app.delete('/api/posts/:id', (req, res) => {
+  if (!isValidId(req.params.id)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Invalid post ID format', field: 'id' }
+    });
+  }
+
+  const index = posts.findIndex(p => p.id === parseInt(req.params.id, 10));
+  if (index === -1) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Post not found' }
+    });
+  }
+
+  const deleted = posts.splice(index, 1)[0];
+  res.status(200).json({ success: true, data: deleted, message: 'Post deleted successfully' });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONTACT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Stricter rate limit for contact form (public, abuse-prone)
+const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { success: false, error: { code: 'RATE_LIMIT', message: 'Too many contact submissions' } }
+});
+
+app.post('/api/contact', contactLimiter, (req, res) => {
+  const { name, email, message } = req.body;
+  const errors = [];
+
+  if (!name || typeof name !== 'string' || name.trim().length < 2) {
+    errors.push({ field: 'name', message: 'Name is required and must be at least 2 characters' });
+  }
+  if (!isValidEmail(email)) {
+    errors.push({ field: 'email', message: 'Valid email is required' });
+  }
+  if (!message || typeof message !== 'string' || message.trim().length < 10) {
+    errors.push({ field: 'message', message: 'Message is required and must be at least 10 characters' });
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', errors } });
+  }
+
+  const newContact = {
+    id: nextContactId++,
+    name: name.trim(),
+    email: email.trim().toLowerCase(),
+    message: message.trim(),
+    submittedAt: new Date().toISOString()
+  };
+  contacts.push(newContact);
+  res.status(201).json({ success: true, data: newContact, message: 'Contact form submitted successfully' });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GLOBAL ERROR HANDLING
+// ═══════════════════════════════════════════════════════════════════════════════
 
 // 404 handler
 app.use((req, res) => {
-    res.status(404).json({
-        status: 'error',
-        error: 'Not Found',
-        message: `Route ${req.method} ${req.path} not found`,
-        availableRoutes: [
-            'GET    /api/health',
-            'GET    /api/users',
-            'GET    /api/users/:id',
-            'POST   /api/users',
-            'GET    /api/posts',
-            'POST   /api/posts',
-            'POST   /api/contact'
-        ]
-    });
+  res.status(404).json({
+    success: false,
+    error: { code: 'NOT_FOUND', message: `Route ${req.method} ${req.path} not found` }
+  });
 });
 
 // Global error handler
 app.use((err, req, res, next) => {
-    console.error('Error:', err);
-
-    res.status(err.status || 500).json({
-        status: 'error',
-        error: err.name || 'Internal Server Error',
-        message: process.env.NODE_ENV === 'production' 
-            ? 'Something went wrong' 
-            : err.message
-    });
+  console.error(err.stack);
+  res.status(500).json({
+    success: false,
+    error: { code: 'INTERNAL_ERROR', message: 'Something went wrong on our end' }
+  });
 });
 
-// ============================================
-// SERVER START
-// ============================================
-
-app.listen(PORT, () => {
-    console.log(`
-    ╔══════════════════════════════════════════╗
-    ║   DecodeLabs Project 2 — API Server      ║
-    ║   The Nervous System is online           ║
-    ╠══════════════════════════════════════════╣
-    ║   Port: ${PORT.toString().padEnd(33)} ║
-    ║   Environment: ${(process.env.NODE_ENV || 'development').padEnd(25)} ║
-    ║   Health: http://localhost:${PORT}/api/health  ║
-    ╚══════════════════════════════════════════╝
-    `);
-});
+// ─── Start Server ─────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`🧠 Nervous System online at http://localhost:${PORT}`);
+  });
+}
 
 module.exports = app;
