@@ -6,16 +6,26 @@ const { User, Post, Contact } = require('../src/models');
 
 let mongoServer;
 
+// Increase Jest timeout for slow Windows machines
+jest.setTimeout(30000);
+
 describe('DecodeLabs Project 3 API', () => {
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryServer.create({
+      instance: { dbName: 'jest' },
+      binary: { downloadDir: './node_modules/.cache/mongodb-memory-server' }
+    });
     const uri = mongoServer.getUri();
     await mongoose.connect(uri);
   });
 
   afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
   });
 
   beforeEach(async () => {
@@ -24,6 +34,9 @@ describe('DecodeLabs Project 3 API', () => {
     await Contact.deleteMany({});
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // HEALTH CHECK
+  // ═══════════════════════════════════════════════════════════════════════════════
   describe('GET /api/health', () => {
     it('should return 200 with status UP', async () => {
       const res = await request(app).get('/api/health');
@@ -34,6 +47,9 @@ describe('DecodeLabs Project 3 API', () => {
     });
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // USERS
+  // ═══════════════════════════════════════════════════════════════════════════════
   describe('GET /api/users', () => {
     it('should return 200 with empty array initially', async () => {
       const res = await request(app).get('/api/users');
@@ -158,6 +174,9 @@ describe('DecodeLabs Project 3 API', () => {
     });
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // POSTS
+  // ═══════════════════════════════════════════════════════════════════════════════
   describe('GET /api/posts', () => {
     it('should return 200 with empty array initially', async () => {
       const res = await request(app).get('/api/posts');
@@ -253,6 +272,9 @@ describe('DecodeLabs Project 3 API', () => {
     });
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CONTACT
+  // ═══════════════════════════════════════════════════════════════════════════════
   describe('POST /api/contact', () => {
     it('should submit contact form and return 201', async () => {
       const res = await request(app)
@@ -280,6 +302,9 @@ describe('DecodeLabs Project 3 API', () => {
     });
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // 404 HANDLER
+  // ═══════════════════════════════════════════════════════════════════════════════
   describe('404 Handler', () => {
     it('should return 404 for unknown routes', async () => {
       const res = await request(app).get('/api/unknown-route');

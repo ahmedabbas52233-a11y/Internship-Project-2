@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { User, Post } = require('../models');
+const mongoose = require('mongoose');
 
 // Helper for consistent error responses
 const errorResponse = (res, status, code, message, errors = null) => {

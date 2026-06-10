@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { User, Post } = require('../models');
+const mongoose = require('mongoose');
 
 const errorResponse = (res, status, code, message, errors = null) => {
   const payload = { success: false, error: { code, message } };

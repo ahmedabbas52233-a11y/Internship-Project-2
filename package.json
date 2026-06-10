@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "DecodeLabs Internship 2026 - Project 3: Database Integration",
   "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "test": "jest --coverage --runInBand"
-  },
+"scripts": {
+  "start": "node src/server.js",
+  "dev": "nodemon src/server.js",
+  "test": "jest --coverage"
+},
   "keywords": [
     "decodelabs",
     "internship",
