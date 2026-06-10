@@ -1,78 +1,130 @@
 const express = require('express');
 const router = express.Router();
+const { User, Post } = require('../models');
 
-// In-memory store (Project 2 requirement - no DB yet)
-let users = [
-  { id: 'usr_001', name: 'Ahmed Abbas', email: 'ahmed@example.com', createdAt: '2026-06-01T10:00:00Z' }
-];
+// Helper for consistent error responses
+const errorResponse = (res, status, code, message, errors = null) => {
+  const payload = { success: false, error: { code, message } };
+  if (errors) payload.error.errors = errors;
+  return res.status(status).json(payload);
+};
 
-// GET /api/users - List all users
-router.get('/', (req, res) => {
-  res.status(200).json({
-    count: users.length,
-    data: users
-  });
+// GET /api/users — List all users (with pagination)
+router.get('/', async (req, res, next) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      User.find().skip(skip).limit(limit).lean(),
+      User.countDocuments()
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: users,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    });
+  } catch (err) { next(err); }
 });
 
-// GET /api/users/:id - Get single user
-router.get('/:id', (req, res) => {
-  const user = users.find(u => u.id === req.params.id);
-  
-  if (!user) {
-    return res.status(404).json({
-      error: 'Not Found',
-      message: `User with id ${req.params.id} not found`,
-      code: 404
-    });
-  }
-  
-  res.status(200).json(user);
+// GET /api/users/:id — Get single user
+router.get('/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return errorResponse(res, 400, 'VALIDATION_ERROR', 'Invalid user ID format', [{ field: 'id', message: 'Invalid user ID format' }]);
+    }
+    const user = await User.findById(req.params.id).populate('posts', 'title content createdAt');
+    if (!user) return errorResponse(res, 404, 'NOT_FOUND', 'User not found');
+    res.status(200).json({ success: true, data: user });
+  } catch (err) { next(err); }
 });
 
-// POST /api/users - Create user
-router.post('/', (req, res) => {
-  const { name, email } = req.body;
-  
-  // Validation
-  if (!name || !email) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Name and email are required',
-      code: 400
-    });
+// POST /api/users — Create user
+router.post('/', async (req, res, next) => {
+  try {
+    const { name, email } = req.body;
+    const errors = [];
+
+    if (!name || typeof name !== 'string' || name.trim().length < 2) {
+      errors.push({ field: 'name', message: 'Name is required and must be at least 2 characters' });
+    }
+    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      errors.push({ field: 'email', message: 'Valid email is required' });
+    }
+    if (errors.length > 0) return errorResponse(res, 400, 'VALIDATION_ERROR', 'Validation failed', errors);
+
+    const newUser = await User.create({ name: name.trim(), email: email.trim().toLowerCase() });
+    res.status(201).json({ success: true, data: newUser });
+  } catch (err) {
+    if (err.code === 11000) return errorResponse(res, 409, 'CONFLICT', 'Email already exists');
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(e => ({ field: e.path, message: e.message }));
+      return errorResponse(res, 400, 'VALIDATION_ERROR', 'Validation failed', errors);
+    }
+    next(err);
   }
-  
-  if (name.length < 3 || name.length > 50) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Name must be between 3 and 50 characters',
-      code: 400
-    });
+});
+
+// PUT /api/users/:id — Update user
+router.put('/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return errorResponse(res, 400, 'VALIDATION_ERROR', 'Invalid user ID format', [{ field: 'id', message: 'Invalid user ID format' }]);
+    }
+
+    const { name, email } = req.body;
+    const updateData = {};
+    const errors = [];
+
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.trim().length < 2) {
+        errors.push({ field: 'name', message: 'Name must be at least 2 characters' });
+      } else {
+        updateData.name = name.trim();
+      }
+    }
+
+    if (email !== undefined) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        errors.push({ field: 'email', message: 'Valid email is required' });
+      } else {
+        updateData.email = email.trim().toLowerCase();
+      }
+    }
+
+    if (errors.length > 0) return errorResponse(res, 400, 'VALIDATION_ERROR', 'Validation failed', errors);
+    if (Object.keys(updateData).length === 0) return errorResponse(res, 400, 'VALIDATION_ERROR', 'No valid fields to update');
+
+    const user = await User.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+    if (!user) return errorResponse(res, 404, 'NOT_FOUND', 'User not found');
+    res.status(200).json({ success: true, data: user });
+  } catch (err) {
+    if (err.code === 11000) return errorResponse(res, 409, 'CONFLICT', 'Email already exists');
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(e => ({ field: e.path, message: e.message }));
+      return errorResponse(res, 400, 'VALIDATION_ERROR', 'Validation failed', errors);
+    }
+    next(err);
   }
-  
-  // Check for duplicate email
-  const existingUser = users.find(u => u.email === email);
-  if (existingUser) {
-    return res.status(409).json({
-      error: 'Conflict',
-      message: `User with email ${email} already exists`,
-      code: 409
-    });
-  }
-  
-  const newUser = {
-    id: `usr_${String(users.length + 1).padStart(3, '0')}`,
-    name,
-    email,
-    createdAt: new Date().toISOString()
-  };
-  
-  users.push(newUser);
-  
-  res.status(201).json({
-    message: 'User created successfully',
-    data: newUser
-  });
+});
+
+// DELETE /api/users/:id — Delete user
+router.delete('/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return errorResponse(res, 400, 'VALIDATION_ERROR', 'Invalid user ID format', [{ field: 'id', message: 'Invalid user ID format' }]);
+    }
+
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return errorResponse(res, 404, 'NOT_FOUND', 'User not found');
+
+    // Cascade delete: remove all posts by this user
+    await Post.deleteMany({ authorId: req.params.id });
+
+    res.status(200).json({ success: true, data: user, message: 'User and associated posts deleted successfully' });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

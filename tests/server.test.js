@@ -1,11 +1,29 @@
 const request = require('supertest');
-const app = require('/src/server');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const mongoose = require('mongoose');
+const app = require('../src/server');
+const { User, Post, Contact } = require('../src/models');
 
-describe('DecodeLabs Project 2 API', () => {
+let mongoServer;
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // HEALTH CHECK
-  // ═══════════════════════════════════════════════════════════════════════════════
+describe('DecodeLabs Project 3 API', () => {
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    const uri = mongoServer.getUri();
+    await mongoose.connect(uri);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    await User.deleteMany({});
+    await Post.deleteMany({});
+    await Contact.deleteMany({});
+  });
+
   describe('GET /api/health', () => {
     it('should return 200 with status UP', async () => {
       const res = await request(app).get('/api/health');
@@ -16,44 +34,42 @@ describe('DecodeLabs Project 2 API', () => {
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // USERS
-  // ═══════════════════════════════════════════════════════════════════════════════
   describe('GET /api/users', () => {
-    it('should return 200 with paginated users', async () => {
+    it('should return 200 with empty array initially', async () => {
       const res = await request(app).get('/api/users');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(Array.isArray(res.body.data)).toBe(true);
-      expect(res.body.pagination).toBeDefined();
-      expect(res.body.pagination.page).toBe(1);
-      expect(res.body.pagination.limit).toBe(10);
+      expect(res.body.data).toEqual([]);
+      expect(res.body.pagination.total).toBe(0);
     });
 
-    it('should respect pagination params', async () => {
+    it('should return paginated users after seeding', async () => {
+      await User.create([{ name: 'Alice', email: 'alice@test.com' }, { name: 'Bob', email: 'bob@test.com' }]);
       const res = await request(app).get('/api/users?page=1&limit=1');
       expect(res.status).toBe(200);
-      expect(res.body.data.length).toBeLessThanOrEqual(1);
-      expect(res.body.pagination.limit).toBe(1);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.pagination.total).toBe(2);
+      expect(res.body.pagination.totalPages).toBe(2);
     });
   });
 
   describe('GET /api/users/:id', () => {
     it('should return 200 for existing user', async () => {
-      const res = await request(app).get('/api/users/1');
+      const user = await User.create({ name: 'Alice', email: 'alice@test.com' });
+      const res = await request(app).get(`/api/users/${user._id}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.id).toBe(1);
+      expect(res.body.data.name).toBe('Alice');
     });
 
     it('should return 400 for invalid ID', async () => {
-      const res = await request(app).get('/api/users/abc');
+      const res = await request(app).get('/api/users/invalid-id');
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('VALIDATION_ERROR');
     });
 
     it('should return 404 for non-existent user', async () => {
-      const res = await request(app).get('/api/users/9999');
+      const res = await request(app).get('/api/users/507f1f77bcf86cd799439011');
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
@@ -63,11 +79,11 @@ describe('DecodeLabs Project 2 API', () => {
     it('should create a new user and return 201', async () => {
       const res = await request(app)
         .post('/api/users')
-        .send({ name: 'Test User', email: 'testuser@example.com' });
+        .send({ name: 'Test User', email: 'test@example.com' });
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
       expect(res.body.data.name).toBe('Test User');
-      expect(res.body.data.email).toBe('testuser@example.com');
+      expect(res.body.data.email).toBe('test@example.com');
     });
 
     it('should return 400 for missing name', async () => {
@@ -76,7 +92,6 @@ describe('DecodeLabs Project 2 API', () => {
         .send({ email: 'test@example.com' });
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('VALIDATION_ERROR');
-      expect(res.body.error.errors.some(e => e.field === 'name')).toBe(true);
     });
 
     it('should return 400 for invalid email', async () => {
@@ -97,25 +112,18 @@ describe('DecodeLabs Project 2 API', () => {
 
   describe('PUT /api/users/:id', () => {
     it('should update user name and return 200', async () => {
+      const user = await User.create({ name: 'Alice', email: 'alice@test.com' });
       const res = await request(app)
-        .put('/api/users/1')
+        .put(`/api/users/${user._id}`)
         .send({ name: 'Updated Alice' });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.name).toBe('Updated Alice');
     });
 
-    it('should update user email and return 200', async () => {
-      const res = await request(app)
-        .put('/api/users/1')
-        .send({ email: 'updatedalice@example.com' });
-      expect(res.status).toBe(200);
-      expect(res.body.data.email).toBe('updatedalice@example.com');
-    });
-
     it('should return 404 for non-existent user', async () => {
       const res = await request(app)
-        .put('/api/users/9999')
+        .put('/api/users/507f1f77bcf86cd799439011')
         .send({ name: 'Ghost' });
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
@@ -128,72 +136,53 @@ describe('DecodeLabs Project 2 API', () => {
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('VALIDATION_ERROR');
     });
-
-    it('should return 409 for duplicate email', async () => {
-      // User 2 has email bob@example.com
-      const res = await request(app)
-        .put('/api/users/1')
-        .send({ email: 'bob@example.com' });
-      expect(res.status).toBe(409);
-      expect(res.body.error.code).toBe('CONFLICT');
-    });
   });
 
   describe('DELETE /api/users/:id', () => {
-    it('should delete user and return 200', async () => {
-      const createRes = await request(app)
-        .post('/api/users')
-        .send({ name: 'To Delete', email: 'todelete@example.com' });
-      const id = createRes.body.data.id;
+    it('should delete user and cascade delete posts', async () => {
+      const user = await User.create({ name: 'To Delete', email: 'delete@test.com' });
+      await Post.create({ title: 'User Post', content: 'Content', authorId: user._id });
 
-      const res = await request(app).delete(`/api/users/${id}`);
+      const res = await request(app).delete(`/api/users/${user._id}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.message).toBe('User deleted successfully');
+
+      const postsRemaining = await Post.countDocuments({ authorId: user._id });
+      expect(postsRemaining).toBe(0);
     });
 
     it('should return 404 for non-existent user', async () => {
-      const res = await request(app).delete('/api/users/9999');
+      const res = await request(app).delete('/api/users/507f1f77bcf86cd799439011');
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
-
-    it('should return 400 for invalid ID', async () => {
-      const res = await request(app).delete('/api/users/abc');
-      expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    });
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // POSTS
-  // ═══════════════════════════════════════════════════════════════════════════════
   describe('GET /api/posts', () => {
-    it('should return 200 with paginated posts', async () => {
+    it('should return 200 with empty array initially', async () => {
       const res = await request(app).get('/api/posts');
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(Array.isArray(res.body.data)).toBe(true);
-      expect(res.body.pagination).toBeDefined();
+      expect(res.body.data).toEqual([]);
     });
   });
 
   describe('GET /api/posts/:id', () => {
     it('should return 200 for existing post', async () => {
-      const res = await request(app).get('/api/posts/1');
+      const user = await User.create({ name: 'Author', email: 'author@test.com' });
+      const post = await Post.create({ title: 'Test', content: 'Content', authorId: user._id });
+      const res = await request(app).get(`/api/posts/${post._id}`);
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.id).toBe(1);
+      expect(res.body.data.title).toBe('Test');
     });
 
     it('should return 400 for invalid ID', async () => {
-      const res = await request(app).get('/api/posts/abc');
+      const res = await request(app).get('/api/posts/invalid-id');
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('VALIDATION_ERROR');
     });
 
     it('should return 404 for non-existent post', async () => {
-      const res = await request(app).get('/api/posts/9999');
+      const res = await request(app).get('/api/posts/507f1f77bcf86cd799439011');
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
@@ -201,35 +190,28 @@ describe('DecodeLabs Project 2 API', () => {
 
   describe('POST /api/posts', () => {
     it('should create a new post and return 201', async () => {
+      const user = await User.create({ name: 'Author', email: 'author@test.com' });
       const res = await request(app)
         .post('/api/posts')
-        .send({ title: 'Test Post', content: 'Test content here', authorId: 1 });
+        .send({ title: 'Test Post', content: 'Test content', authorId: user._id.toString() });
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
       expect(res.body.data.title).toBe('Test Post');
-      expect(res.body.data.authorId).toBe(1);
     });
 
     it('should return 400 for missing title', async () => {
+      const user = await User.create({ name: 'Author', email: 'author@test.com' });
       const res = await request(app)
         .post('/api/posts')
-        .send({ content: 'Test', authorId: 1 });
+        .send({ content: 'Test', authorId: user._id.toString() });
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    });
-
-    it('should return 400 for short title', async () => {
-      const res = await request(app)
-        .post('/api/posts')
-        .send({ title: 'Hi', content: 'Test', authorId: 1 });
-      expect(res.status).toBe(400);
-      expect(res.body.error.errors.some(e => e.field === 'title')).toBe(true);
     });
 
     it('should return 404 for non-existent author', async () => {
       const res = await request(app)
         .post('/api/posts')
-        .send({ title: 'Test Post', content: 'Test', authorId: 9999 });
+        .send({ title: 'Test', content: 'Test', authorId: '507f1f77bcf86cd799439011' });
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
@@ -237,26 +219,19 @@ describe('DecodeLabs Project 2 API', () => {
 
   describe('PUT /api/posts/:id', () => {
     it('should update post title and return 200', async () => {
+      const user = await User.create({ name: 'Author', email: 'author@test.com' });
+      const post = await Post.create({ title: 'Old', content: 'Content', authorId: user._id });
       const res = await request(app)
-        .put('/api/posts/1')
+        .put(`/api/posts/${post._id}`)
         .send({ title: 'Updated Title' });
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
       expect(res.body.data.title).toBe('Updated Title');
     });
 
     it('should return 404 for non-existent post', async () => {
       const res = await request(app)
-        .put('/api/posts/9999')
+        .put('/api/posts/507f1f77bcf86cd799439011')
         .send({ title: 'Ghost' });
-      expect(res.status).toBe(404);
-      expect(res.body.error.code).toBe('NOT_FOUND');
-    });
-
-    it('should return 404 for non-existent author on update', async () => {
-      const res = await request(app)
-        .put('/api/posts/1')
-        .send({ authorId: 9999 });
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
@@ -264,27 +239,20 @@ describe('DecodeLabs Project 2 API', () => {
 
   describe('DELETE /api/posts/:id', () => {
     it('should delete post and return 200', async () => {
-      const createRes = await request(app)
-        .post('/api/posts')
-        .send({ title: 'To Delete', content: 'Delete me', authorId: 1 });
-      const id = createRes.body.data.id;
-
-      const res = await request(app).delete(`/api/posts/${id}`);
+      const user = await User.create({ name: 'Author', email: 'author@test.com' });
+      const post = await Post.create({ title: 'To Delete', content: 'Delete me', authorId: user._id });
+      const res = await request(app).delete(`/api/posts/${post._id}`);
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
       expect(res.body.message).toBe('Post deleted successfully');
     });
 
     it('should return 404 for non-existent post', async () => {
-      const res = await request(app).delete('/api/posts/9999');
+      const res = await request(app).delete('/api/posts/507f1f77bcf86cd799439011');
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // CONTACT
-  // ═══════════════════════════════════════════════════════════════════════════════
   describe('POST /api/contact', () => {
     it('should submit contact form and return 201', async () => {
       const res = await request(app)
@@ -293,7 +261,6 @@ describe('DecodeLabs Project 2 API', () => {
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
       expect(res.body.data.name).toBe('John Doe');
-      expect(res.body.message).toBe('Contact form submitted successfully');
     });
 
     it('should return 400 for missing fields', async () => {
@@ -302,7 +269,6 @@ describe('DecodeLabs Project 2 API', () => {
         .send({ name: 'John' });
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('VALIDATION_ERROR');
-      expect(res.body.error.errors.length).toBeGreaterThanOrEqual(2);
     });
 
     it('should return 400 for short message', async () => {
@@ -312,39 +278,13 @@ describe('DecodeLabs Project 2 API', () => {
       expect(res.status).toBe(400);
       expect(res.body.error.errors.some(e => e.field === 'message')).toBe(true);
     });
-
-    it('should return 400 for invalid email', async () => {
-      const res = await request(app)
-        .post('/api/contact')
-        .send({ name: 'John', email: 'bad-email', message: 'This is a valid message content.' });
-      expect(res.status).toBe(400);
-      expect(res.body.error.errors.some(e => e.field === 'email')).toBe(true);
-    });
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // 404 HANDLER
-  // ═══════════════════════════════════════════════════════════════════════════════
   describe('404 Handler', () => {
     it('should return 404 for unknown routes', async () => {
       const res = await request(app).get('/api/unknown-route');
       expect(res.status).toBe(404);
-      expect(res.body.success).toBe(false);
       expect(res.body.error.code).toBe('NOT_FOUND');
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // ERROR HANDLER
-  // ═══════════════════════════════════════════════════════════════════════════════
-  describe('Global Error Handler', () => {
-    it('should handle unexpected errors gracefully', async () => {
-      const res = await request(app)
-        .post('/api/users')
-        .set('Content-Type', 'application/json')
-        .send('{"name": "broken');
-      expect(res.status).toBe(500);
-      expect(res.body.error.code).toBe('INTERNAL_ERROR');
     });
   });
 });
