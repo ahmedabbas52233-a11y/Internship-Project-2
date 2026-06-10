@@ -14,23 +14,7 @@ Project 2 is your **integration phase**: Backend API Development. This isn't abo
 
 ---
 
-## 📋 Qualification Criteria
-
-| Requirement | Status |
-|-------------|--------|
-| Complete Project 2 | 🔄 In Progress |
-| Verified for quality | ⏳ Pending |
-| Unlocks Project 3 | 🔒 Locked |
-
----
-
 ## 🎯 Key Requirements
-
-- [x] Create API endpoints (GET / POST)
-- [x] Handle user input and responses
-- [x] Validate basic data
-- [ ] Connect to real database (Project 3)
-- [ ] Add authentication (Project 4)
 
 ---
 
@@ -38,7 +22,7 @@ Project 2 is your **integration phase**: Backend API Development. This isn't abo
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  CLIENT (Browser)  →  Project 1 Frontend             │
+│  CLIENT (Browser)  →  Project 1 Frontend            │
 │  • Touchpoint Activation                            │
 │  • User Interface Layer                             │
 ├─────────────────────────────────────────────────────┤
@@ -48,7 +32,7 @@ Project 2 is your **integration phase**: Backend API Development. This isn't abo
 ├─────────────────────────────────────────────────────┤
 │  API GATEWAY / Brain Stem                           │
 │  • Authentication Gate                              │
-│  • Rate Limiting (Circuit Breakers)               │
+│  • Rate Limiting (Circuit Breakers)                 │
 │  • Scope Validation                                 │
 ├─────────────────────────────────────────────────────┤
 │  MICROSERVICES / Neural Processing                  │
@@ -68,8 +52,8 @@ Project 2 is your **integration phase**: Backend API Development. This isn't abo
 
 ```bash
 # Clone repository
-git clone https://github.com/ahmedabbas52233-a11y/Internship-Project-1.git
-cd Internship-Project-1/part2-backend-api
+git clone https://github.com/ahmedabbas52233-a11y/Internship-Project-2.git
+cd Internship-Project-2
 
 # Install dependencies
 npm install
@@ -205,22 +189,6 @@ fetch('http://localhost:3000/api/contact', {
 | Mongoose / Prisma | ORM/ODM layer |
 | Migrations | Schema versioning |
 | Seeding | Test data generation |
-
----
-
-## 📞 Contact
-
-| Channel | Detail |
-|---------|--------|
-| Email | hello@decodelabs.in |
-| Location | Greater Lucknow, India |
-| Batch | 2026 Full Stack Cohort |
-
----
-
-## 📄 License
-
-&copy; 2026 DecodeLabs. All rights reserved.
 
 ---
 

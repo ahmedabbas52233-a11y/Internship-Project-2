@@ -4,7 +4,7 @@
  */
 
 const request = require('supertest');
-const app = require('./server');
+const app = require('../server');
 
 describe('DecodeLabs API — Project 2', () => {
 
