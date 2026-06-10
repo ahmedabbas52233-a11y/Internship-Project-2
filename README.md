@@ -1,52 +1,49 @@
-# DecodeLabs Internship 2026 — Project 2: Backend API Development
+# DecodeLabs Internship 2026 — Project 3: Database Integration
 
 > **Batch 2026 | Powered by DecodeLabs**
 >
-> *"Project 1 was the skin. Project 2 is the life."* — Martina Plantijn
+> _"Project 1 was the skin. Project 2 was the nervous system. Project 3 is the memory."_ — Martina Plantijn
 
----
+* * *
 
-## 🧠 The Nervous System
+## 🧠 The Memory Vault
 
-Project 2 is your **integration phase**: Backend API Development. This isn't about visual flair — it's about the application's brain. Before you scale into complex databases, you must master building robust endpoints and managing the flow of data between your frontend and the server.
+Project 3 is your **persistence phase**: Database Integration. This isn't about "temporary variables" — it's about **Data Longevity**. Before you build complex user authentication, you must master the art of designing schemas and performing CRUD operations to manage information effectively through permanent storage.
 
-**Goal:** Develop a simple backend API to handle application logic.
+**Goal:** Connect the backend with a database to store and retrieve data persistently.
 
----
+* * *
 
-## 🎯 Key Requirements
-
----
-
-## 🏗️ Architecture: The Nervous System
+## 🏗️ Architecture: The Memory Vault
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │  CLIENT (Browser)  →  Project 1 Frontend            │
-│  • Touchpoint Activation                            │
-│  • User Interface Layer                             │
+│  • Touchpoint Activation                              │
+│  • User Interface Layer                               │
 ├─────────────────────────────────────────────────────┤
-│  THE NETWORK VOID                                   │
-│  • Latency Critical Path                            │
-│  • Bandwidth Flow                                   │
+│  THE NETWORK VOID                                     │
+│  • Latency Critical Path                              │
+│  • Bandwidth Flow                                     │
 ├─────────────────────────────────────────────────────┤
-│  API GATEWAY / Brain Stem                           │
-│  • Authentication Gate                              │
-│  • Rate Limiting (Circuit Breakers)                 │
-│  • Scope Validation                                 │
+│  API GATEWAY / Brain Stem                             │
+│  • Authentication Gate (Project 4)                     │
+│  • Rate Limiting (Circuit Breakers)                   │
+│  • Scope Validation                                   │
 ├─────────────────────────────────────────────────────┤
-│  MICROSERVICES / Neural Processing                  │
-│  • Resource Controller                              │
-│  • Data Model                                       │
-│  • Error Handling                                   │
+│  CONTROLLERS / Neural Processing                      │
+│  • Resource Controller                                │
+│  • Data Model (Mongoose Schemas)                      │
+│  • Error Handling                                     │
 ├─────────────────────────────────────────────────────┤
-│  DATABASE / Memory Storage                          │
-│  • Data Persistence Layer                           │
-│  • Statelessness → ability to regenerate/restart    │
+│  DATABASE / Memory Storage                            │
+│  • MongoDB — Persistent Document Store                │
+│  • Schema Validation & Constraints                    │
+│  • Referential Integrity (User → Posts)               │
 └─────────────────────────────────────────────────────┘
 ```
 
----
+* * *
 
 ## 🚀 Getting Started
 
@@ -58,57 +55,115 @@ cd Internship-Project-2
 # Install dependencies
 npm install
 
+# Configure environment
+cp .env.example .env
+# Edit .env and set your MONGO_URI
+
 # Start development server
 npm run dev
 
-# Run tests
+# Run tests (uses in-memory MongoDB — no external DB required)
 npm test
 ```
 
----
+* * *
 
 ## 📡 API Endpoints
 
 ### Health Check
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | System pulse check |
+
+| Method | Endpoint | Description | Status Codes |
+|--------|----------|-------------|--------------|
+| GET | `/api/health` | System pulse check | 200 |
 
 ### Users
+
 | Method | Endpoint | Description | Status Codes |
 |--------|----------|-------------|--------------|
-| GET | `/api/users` | List all users | 200 |
-| GET | `/api/users/:id` | Get single user | 200, 400, 404 |
+| GET | `/api/users` | List all users (paginated) | 200 |
+| GET | `/api/users/:id` | Get single user with posts | 200, 400, 404 |
 | POST | `/api/users` | Create user | 201, 400, 409 |
+| PUT | `/api/users/:id` | Update user | 200, 400, 404, 409 |
+| DELETE | `/api/users/:id` | Delete user + cascade posts | 200, 400, 404 |
 
 ### Posts
+
 | Method | Endpoint | Description | Status Codes |
 |--------|----------|-------------|--------------|
-| GET | `/api/posts` | List all posts | 200 |
+| GET | `/api/posts` | List all posts (paginated) | 200 |
+| GET | `/api/posts/:id` | Get single post with author | 200, 400, 404 |
 | POST | `/api/posts` | Create post | 201, 400, 404 |
+| PUT | `/api/posts/:id` | Update post | 200, 400, 404 |
+| DELETE | `/api/posts/:id` | Delete post | 200, 400, 404 |
 
 ### Contact (Connects to Project 1)
+
 | Method | Endpoint | Description | Status Codes |
 |--------|----------|-------------|--------------|
 | POST | `/api/contact` | Submit contact form | 201, 400 |
 
----
+* * *
 
 ## 📊 HTTP Status Codes Implemented
 
 | Code | Meaning | When Used |
 |------|---------|-----------|
-| **200** | OK | Successful GET requests |
+| **200** | OK | Successful GET/PUT/DELETE requests |
 | **201** | Created | Successful POST requests |
-| **400** | Bad Request | Validation errors, malformed data |
+| **400** | Bad Request | Validation errors, malformed data, invalid ObjectId |
 | **401** | Unauthorized | Authentication required (Project 4) |
 | **403** | Forbidden | Permission denied (Project 4) |
-| **404** | Not Found | Resource doesn't exist |
-| **409** | Conflict | Duplicate data (e.g., email) |
+| **404** | Not Found | Resource or referenced author doesn't exist |
+| **409** | Conflict | Duplicate data (e.g., email already exists) |
 | **429** | Too Many Requests | Rate limit exceeded |
-| **500** | Internal Server Error | Unexpected server errors |
+| **500** | Internal Server Error | Unexpected server/database errors |
 
----
+* * *
+
+## 🗄️ Database Schema
+
+### User Collection
+
+```javascript
+{
+  _id: ObjectId("..."),
+  name: String,        // required, minlength: 2, trimmed
+  email: String,       // required, unique, lowercase, valid email format
+  createdAt: Date,     // auto-generated by Mongoose
+  updatedAt: Date      // auto-generated by Mongoose
+}
+```
+
+**Constraints:** `email` is indexed with `unique: true` — MongoDB enforces no duplicates at the database level.
+
+### Post Collection
+
+```javascript
+{
+  _id: ObjectId("..."),
+  title: String,       // required, minlength: 3, trimmed
+  content: String,     // required, trimmed
+  authorId: ObjectId,  // required, references User._id
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+**Relationship:** `authorId` → `User._id` (Many-to-One). Populated on GET requests to include author details.
+
+### Contact Collection
+
+```javascript
+{
+  _id: ObjectId("..."),
+  name: String,        // required, minlength: 2
+  email: String,       // required, valid email format
+  message: String,     // required, minlength: 10
+  createdAt: Date
+}
+```
+
+* * *
 
 ## 🛡️ Security Features
 
@@ -117,10 +172,12 @@ npm test
 | Helmet | `helmet()` | Security headers |
 | CORS | `cors()` | Cross-origin protection |
 | Rate Limiting | `express-rate-limit` | Circuit breaker / DDoS protection |
-| Input Validation | Custom validators | "Never trust the client" |
-| Error Handling | Global middleware | Error resilience |
+| Input Validation | Mongoose Schema + Custom validators | "Never trust the client" |
+| Injection Prevention | Mongoose parameterized queries | Prevents NoSQL/SQL injection |
+| Error Handling | Global middleware + Mongoose error mapping | Error resilience without data leakage |
+| Data Integrity | Schema constraints (`unique`, `required`, `minlength`) | Enforced at database level |
 
----
+* * *
 
 ## 🧪 Testing
 
@@ -128,29 +185,48 @@ npm test
 # Run all tests with coverage
 npm test
 
-# Expected output:
-# ✓ GET /api/health
-# ✓ GET /api/users
-# ✓ GET /api/users/:id
-# ✓ POST /api/users
-# ✓ POST /api/contact
-# ✓ 404 handler
+# Tests run against mongodb-memory-server (no local MongoDB required)
 ```
 
----
+**Coverage includes:**
+- All CRUD operations for Users and Posts
+- Validation errors (400) for malformed data
+- Conflict detection (409) for duplicate emails
+- Cascade delete (user removal deletes associated posts)
+- Population of references (posts include author, users include posts)
+- 404 handling for non-existent resources
+- Invalid ObjectId format handling
+- Global error handler for unexpected errors
+
+* * *
 
 ## 📁 File Structure
 
 ```
-part2-backend-api/
-├── server.js           # Main application entry
-├── server.test.js      # API test suite
-├── package.json        # Dependencies & scripts
-├── .env.example        # Environment template
-└── README.md           # This file
+Internship-Project-2/
+├── src/
+│   ├── config/
+│   │   └── db.js              # MongoDB connection handler
+│   ├── models/
+│   │   ├── User.js            # User schema with constraints
+│   │   ├── Post.js            # Post schema with author reference
+│   │   ├── Contact.js         # Contact form schema
+│   │   └── index.js           # Barrel export
+│   ├── middleware/
+│   │   └── errorHandler.js    # Mongoose error mapping
+│   ├── routes/
+│   │   ├── users.js           # User CRUD + cascade delete
+│   │   ├── posts.js           # Post CRUD + author validation
+│   │   └── contact.js         # Contact form submission
+│   └── server.js              # App entry, routes, security
+├── tests/
+│   └── server.test.js         # Full API test suite
+├── package.json               # Dependencies & scripts
+├── .env.example               # Environment template
+└── README.md                  # This file
 ```
 
----
+* * *
 
 ## 🔗 Connection to Project 1
 
@@ -165,33 +241,50 @@ fetch('http://localhost:3000/api/contact', {
 })
 ```
 
----
+Contact submissions are now **persistently stored** in MongoDB and survive server restarts.
 
-## 🎓 Learning Outcomes
+* * *
 
-1. **RESTful Naming** — Resource-based endpoint design
-2. **HTTP Methods** — GET (safe/idempotent), POST (unsafe/non-idempotent)
-3. **Status Codes** — Semantic communication of state
-4. **JSON** — Lightweight, machine-parsable, human-readable
-5. **Validation** — "Never trust the client" — syntactic + semantic validation
-6. **Security** — AuthN, AuthZ, circuit breakers, rate limiting
-7. **Documentation** — OpenAPI/Swagger specs (future)
+## 🔗 Connection to Project 2
 
----
+Project 3 is a direct evolution of Project 2:
 
-## 🔜 Project 3 Roadmap
+| Project 2 (In-Memory) | Project 3 (MongoDB) |
+|----------------------|---------------------|
+| `let users = []` | `User.find()` — database query |
+| Integer IDs (`id: 1, 2, 3`) | MongoDB ObjectIds (`_id: ObjectId(...)`) |
+| Manual duplicate check | `unique: true` index enforced by MongoDB |
+| Data lost on restart | Data persists across restarts |
+| No relationships | `authorId` references `User` with `populate()` |
+| Basic validation | Schema-level + database-level constraints |
 
-**Next Phase:** Database Integration
+All endpoints, response formats, and security layers from Project 2 are preserved and enhanced.
+
+* * *
+
+## 🔜 Project 4 Roadmap
+
+**Next Phase:** Authentication & Authorization
 
 | Topic | Description |
 |-------|-------------|
-| MongoDB / PostgreSQL | Persistent data storage |
-| Mongoose / Prisma | ORM/ODM layer |
-| Migrations | Schema versioning |
-| Seeding | Test data generation |
+| JWT Tokens | Stateless authentication |
+| Password Hashing | bcrypt for secure storage |
+| Protected Routes | Middleware for AuthN/AuthZ |
+| Role-Based Access | Admin vs User permissions |
 
----
+* * *
 
-<p align="center">
-  <strong>Build with integrity. Validate everything. Communicate clearly. Respect the architecture.</strong>
-</p>
+## 🎓 Learning Outcomes
+
+1. **Schema Design** — Structuring documents with validation constraints
+2. **Database Relationships** — Referencing vs embedding, population
+3. **CRUD with Persistence** — Create, Read, Update, Delete against real storage
+4. **Data Integrity** — Enforcing rules at the schema and database level
+5. **ORM/ODM Usage** — Mongoose as the bridge between code and storage
+6. **Injection Prevention** — Parameterized queries via Mongoose
+7. **Testing with Databases** — mongodb-memory-server for isolated test environments
+
+* * *
+
+**Build with integrity. Validate everything. Persist with purpose. Respect the architecture.**
