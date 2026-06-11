@@ -9,6 +9,7 @@ const errorHandler = require('./middleware/errorHandler');
 const userRoutes = require('./routes/users');
 const postRoutes = require('./routes/posts');
 const contactRoutes = require('./routes/contact');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ success: true, status: 'UP', timestamp: new Date().toISOString() });
 });
 
+app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/contact', contactRoutes);
