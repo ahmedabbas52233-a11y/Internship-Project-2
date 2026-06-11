@@ -15,7 +15,19 @@ const app = express();
 
 // ─── Security & Middleware ──────────────────────────────────────────────────
 app.use(helmet());
-app.use(cors());
+const allowedOrigins = [
+    'http://localhost:5500',                    // Local dev
+    'http://localhost:3000',
+    'https://ahmedabbas52233-a11y.github.io'    // Your frontend
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        callback(new Error('Not allowed by CORS'));
+    }
+}));
 app.use(express.json());
 
 const limiter = rateLimit({
