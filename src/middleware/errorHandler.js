@@ -1,28 +1,45 @@
+// src/middleware/errorHandler.js
 const errorHandler = (err, req, res, next) => {
-  console.error(err.stack);
+    let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+    let message = err.message;
 
-  // Mongoose validation error
-  if (err.name === 'ValidationError') {
-    const errors = Object.values(err.errors).map(e => ({ field: e.path, message: e.message }));
-    return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Validation failed', errors } });
-  }
+    // Mongoose bad ObjectId
+    if (err.name === 'CastError') {
+        statusCode = 404;
+        message = 'Resource not found';
+    }
 
-  // Mongoose duplicate key
-  if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
-    return res.status(409).json({ success: false, error: { code: 'CONFLICT', message: `${field} already exists` } });
-  }
+    // Mongoose duplicate key
+    if (err.code === 11000) {
+        statusCode = 409;
+        message = 'Duplicate field value entered';
+    }
 
-  // Mongoose cast error (invalid ObjectId)
-  if (err.name === 'CastError') {
-    return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: `Invalid ${err.path}: ${err.value}` } });
-  }
+    // Mongoose validation error
+    if (err.name === 'ValidationError') {
+        statusCode = 400;
+        message = Object.values(err.errors).map(val => val.message).join(', ');
+    }
 
-  // Default
-  res.status(err.status || 500).json({
-    success: false,
-    error: { code: err.code || 'INTERNAL_ERROR', message: err.message || 'Something went wrong on our end' }
-  });
+    // JWT errors
+    if (err.name === 'JsonWebTokenError') {
+        statusCode = 401;
+        message = 'Invalid token';
+    }
+
+    if (err.name === 'TokenExpiredError') {
+        statusCode = 401;
+        message = 'Token expired';
+    }
+
+    res.status(statusCode).json({
+        success: false,
+        error: {
+            code: err.code || 'SERVER_ERROR',
+            message: message,
+            ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+        }
+    });
 };
 
 module.exports = errorHandler;

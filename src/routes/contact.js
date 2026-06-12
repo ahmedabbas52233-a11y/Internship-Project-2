@@ -1,44 +1,50 @@
+// src/routes/contact.js
 const express = require('express');
 const router = express.Router();
-const { Contact } = require('../models');
 
-const errorResponse = (res, status, code, message, errors = null) => {
-  const payload = { success: false, error: { code, message } };
-  if (errors) payload.error.errors = errors;
-  return res.status(status).json(payload);
+const getDB = () => {
+    if (global.memoryDB) return global.memoryDB;
+    try { return require('../config/db-memory'); } catch { return null; }
 };
 
-// POST /api/contact — Submit contact form
+// @route   GET /api/contact
+// @desc    Get all contact messages
+// @access  Public
+router.get('/', async (req, res, next) => {
+    try {
+        const db = getDB();
+        const contacts = db ? db.getAllContacts() : [];
+        res.json({ success: true, count: contacts.length, data: contacts });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// @route   POST /api/contact
+// @desc    Submit a contact message
+// @access  Public
 router.post('/', async (req, res, next) => {
-  try {
-    const { name, email, message } = req.body;
-    const errors = [];
+    try {
+        const { name, email, message, subject } = req.body;
 
-    if (!name || typeof name !== 'string' || name.trim().length < 2) {
-      errors.push({ field: 'name', message: 'Name is required and must be at least 2 characters' });
-    }
-    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      errors.push({ field: 'email', message: 'Valid email is required' });
-    }
-    if (!message || typeof message !== 'string' || message.trim().length < 10) {
-      errors.push({ field: 'message', message: 'Message is required and must be at least 10 characters' });
-    }
+        if (!name || !email || !message) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'Please provide name, email, and message' }
+            });
+        }
 
-    if (errors.length > 0) return errorResponse(res, 400, 'VALIDATION_ERROR', 'Validation failed', errors);
+        const db = getDB();
+        const contact = db ? db.createContact({ name, email, message, subject }) : req.body;
 
-    const newContact = await Contact.create({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      message: message.trim()
-    });
-    res.status(201).json({ success: true, data: newContact, message: 'Contact form submitted successfully' });
-  } catch (err) {
-    if (err.name === 'ValidationError') {
-      const errors = Object.values(err.errors).map(e => ({ field: e.path, message: e.message }));
-      return errorResponse(res, 400, 'VALIDATION_ERROR', 'Validation failed', errors);
+        res.status(201).json({
+            success: true,
+            message: 'Message sent successfully',
+            data: contact
+        });
+    } catch (error) {
+        next(error);
     }
-    next(err);
-  }
 });
 
 module.exports = router;

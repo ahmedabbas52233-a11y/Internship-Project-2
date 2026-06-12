@@ -1,102 +1,153 @@
+// src/routes/auth.js
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
-const { User } = require('../models');
-const auth = require('../middleware/auth');
 
-const errorResponse = (res, status, code, message, errors = null) => {
-  const payload = { success: false, error: { code, message } };
-  if (errors) payload.error.errors = errors;
-  return res.status(status).json(payload);
-};
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-demo-only';
 
-// POST /api/auth/register
-router.post('/register', async (req, res, next) => {
-  try {
-    const { name, email, password } = req.body;
-    const errors = [];
+function getDB() {
+    if (global.memoryDB) return global.memoryDB;
+    try { return require('../config/db-memory'); } catch { return null; }
+}
 
-    if (!name || typeof name !== 'string' || name.trim().length < 2) {
-      errors.push({ field: 'name', message: 'Name is required and must be at least 2 characters' });
+// @route   POST /api/auth/register
+router.post('/register', async function(req, res, next) {
+    try {
+        const { name, email, password } = req.body;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'Please provide name, email, and password' }
+            });
+        }
+
+        const db = getDB();
+
+        if (db && db.findUserByEmail(email)) {
+            return res.status(409).json({
+                success: false,
+                error: { code: 'DUPLICATE_ERROR', message: 'User already exists with this email' }
+            });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        let user = null;
+        if (db) {
+            user = db.createUser({ name, email, password: hashedPassword });
+        }
+
+        const token = jwt.sign(
+            { userId: user ? user._id : 'demo-id' },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        res.status(201).json({
+            success: true,
+            message: 'User registered successfully',
+            data: {
+                token,
+                user: user ? { id: user._id, name: user.name, email: user.email } : { name, email }
+            }
+        });
+    } catch (error) {
+        next(error);
     }
-    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      errors.push({ field: 'email', message: 'Valid email is required' });
-    }
-    if (!password || typeof password !== 'string' || password.length < 6) {
-      errors.push({ field: 'password', message: 'Password is required and must be at least 6 characters' });
-    }
-    if (errors.length > 0) return errorResponse(res, 400, 'VALIDATION_ERROR', 'Validation failed', errors);
-
-    const newUser = await User.create({ name: name.trim(), email: email.trim().toLowerCase(), password });
-
-    const token = jwt.sign(
-      { id: newUser._id },
-      process.env.JWT_SECRET || 'decodelabs-secret-key',
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      data: {
-        user: { id: newUser._id, name: newUser.name, email: newUser.email },
-        token
-      }
-    });
-  } catch (err) {
-    if (err.code === 11000) return errorResponse(res, 409, 'CONFLICT', 'Email already exists');
-    if (err.name === 'ValidationError') {
-      const errors = Object.values(err.errors).map(e => ({ field: e.path, message: e.message }));
-      return errorResponse(res, 400, 'VALIDATION_ERROR', 'Validation failed', errors);
-    }
-    next(err);
-  }
 });
 
-// POST /api/auth/login
-router.post('/login', async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
+// @route   POST /api/auth/login
+router.post('/login', async function(req, res, next) {
+    try {
+        const { email, password } = req.body;
 
-    if (!email || !password) {
-      return errorResponse(res, 400, 'VALIDATION_ERROR', 'Email and password are required');
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'Please provide email and password' }
+            });
+        }
+
+        const db = getDB();
+        const user = db ? db.findUserByEmail(email) : null;
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: { code: 'AUTH_ERROR', message: 'Invalid credentials' }
+            });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({
+                success: false,
+                error: { code: 'AUTH_ERROR', message: 'Invalid credentials' }
+            });
+        }
+
+        const token = jwt.sign(
+            { userId: user._id },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        res.json({
+            success: true,
+            message: 'Login successful',
+            data: {
+                token,
+                user: { id: user._id, name: user.name, email: user.email }
+            }
+        });
+    } catch (error) {
+        next(error);
     }
-
-    const user = await User.findOne({ email: email.trim().toLowerCase() }).select('+password');
-    if (!user) {
-      return errorResponse(res, 401, 'UNAUTHORIZED', 'Invalid email or password');
-    }
-
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return errorResponse(res, 401, 'UNAUTHORIZED', 'Invalid email or password');
-    }
-
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET || 'decodelabs-secret-key',
-      { expiresIn: '7d' }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      data: {
-        user: { id: user._id, name: user.name, email: user.email },
-        token
-      }
-    });
-  } catch (err) {
-    next(err);
-  }
 });
 
-// GET /api/auth/me — Protected route
-router.get('/me', auth, async (req, res) => {
-  res.status(200).json({
-    success: true,
-    data: req.user
-  });
+// @route   GET /api/auth/me
+router.get('/me', async function(req, res, next) {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({
+                success: false,
+                error: { code: 'AUTH_ERROR', message: 'No token provided' }
+            });
+        }
+
+        const token = authHeader.replace('Bearer ', '');
+
+        let decoded;
+        try {
+            decoded = jwt.verify(token, JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({
+                success: false,
+                error: { code: 'AUTH_ERROR', message: 'Invalid token' }
+            });
+        }
+
+        const db = getDB();
+        const user = db ? db.findUserById(decoded.userId) : null;
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                error: { code: 'NOT_FOUND', message: 'User not found' }
+            });
+        }
+
+        res.json({
+            success: true,
+            data: { id: user._id, name: user.name, email: user.email, role: user.role }
+        });
+    } catch (error) {
+        next(error);
+    }
 });
 
 module.exports = router;
